@@ -1,0 +1,21 @@
+menu "MQTT Broker"
+    config MQTT_BROKER_PORT
+        int "Broker listen port"
+        default 1883
+        help
+            TCP port for the MQTT broker to listen on.
+
+    config MQTT_BROKER_MAX_CLIENTS
+        int "Max concurrent MQTT clients"
+        default 8
+        range 1 16
+        help
+            Maximum number of MQTT clients connected simultaneously.
+
+    config MQTT_BROKER_MAX_SUBSCRIPTIONS
+        int "Max total subscriptions"
+        default 32
+        range 1 128
+        help
+            Maximum number of topic subscriptions across all clients.
+endmenu

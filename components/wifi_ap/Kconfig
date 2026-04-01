@@ -1,0 +1,28 @@
+menu "WiFi Access Point"
+    config WIFI_AP_SSID
+        string "AP SSID"
+        default "TrainControl"
+        help
+            SSID (network name) of the WiFi access point.
+
+    config WIFI_AP_PASSWORD
+        string "AP Password"
+        default "train1234"
+        help
+            Password for the WiFi access point.
+            Must be at least 8 characters for WPA2.
+
+    config WIFI_AP_CHANNEL
+        int "WiFi Channel"
+        default 6
+        range 1 13
+        help
+            WiFi channel for the access point.
+
+    config WIFI_AP_MAX_CONNECTIONS
+        int "Max Stations"
+        default 4
+        range 1 10
+        help
+            Maximum number of stations that can connect simultaneously.
+endmenu

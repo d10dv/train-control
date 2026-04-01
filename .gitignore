@@ -1,0 +1,23 @@
+# Cache
+.cache/
+
+# Build
+build/
+sdkconfig
+sdkconfig.old
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ESP-IDF
+managed_components/
+dependencies.lock
+eim_config.toml

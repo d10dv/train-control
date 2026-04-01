@@ -1,0 +1,15 @@
+menu "Debug Logging"
+    config DLOG_ENABLE_STRUCTURED
+        bool "Enable structured log format"
+        default y
+        help
+            When enabled, log output includes structured fields
+            (timestamp, tag, severity).
+
+    config DLOG_ENABLE_MQTT_TRANSPORT
+        bool "Publish logs to MQTT topic"
+        default n
+        help
+            When enabled, log messages are also published to
+            the MQTT topic "train/log".
+endmenu

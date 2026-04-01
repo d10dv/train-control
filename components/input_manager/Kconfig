@@ -1,0 +1,22 @@
+menu "Input Manager"
+    config INPUT_DEBOUNCE_MS
+        int "Button debounce time (ms)"
+        default 50
+        range 10 500
+        help
+            Debounce period for button inputs in milliseconds.
+
+    config INPUT_LONG_PRESS_MS
+        int "Long press threshold (ms)"
+        default 1000
+        range 200 5000
+        help
+            Time a button must be held to trigger a long press event.
+
+    config INPUT_ENCODER_USE_PCNT
+        bool "Use PCNT peripheral for encoders"
+        default y
+        help
+            Use the hardware pulse counter (PCNT) peripheral for
+            quadrature decoding. Falls back to GPIO ISR if disabled.
+endmenu
