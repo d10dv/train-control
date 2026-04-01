@@ -10,4 +10,5 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
     MG_ENABLE_PACKED_FS=0
     MG_ENABLE_MBEDTLS=0
     MG_ENABLE_LINES=0
+    MG_ENABLE_LOG=0
 )
