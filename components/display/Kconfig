@@ -1,0 +1,21 @@
+menu "Display"
+
+    config DISPLAY_PIN_SDA
+        int "SDA GPIO"
+        default 22
+
+    config DISPLAY_PIN_SCL
+        int "SCL GPIO"
+        default 19
+
+    config DISPLAY_PIN_RST
+        int "RST (Reset) GPIO (-1 to disable)"
+        default -1
+        range -1 39
+
+    config DISPLAY_I2C_FREQ_HZ
+        int "I2C clock frequency (Hz)"
+        default 400000
+        range 100000 1000000
+
+endmenu

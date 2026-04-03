@@ -7,6 +7,7 @@ ESP32-based control system. The microcontroller acts as a WiFi access point and 
 - **WiFi Access Point** — ESP32 runs as a soft AP, external devices connect directly to it
 - **MQTT Broker** — embedded broker built on [Mongoose](https://github.com/cesanta/mongoose), port 1883
 - **Input Handling** — buttons (press/long-press/release) and rotary encoders (CW/CCW/click) with hardware quadrature decoding (PCNT)
+- **OLED Display** — SSD1306 128x64 I2C display showing encoder position
 - **Structured Logging** — debug output over UART with optional publishing to an MQTT topic
 
 ## Architecture
@@ -41,6 +42,7 @@ Modules communicate through the event bus (`event_bus`) built on the ESP-IDF eve
 | `wifi_ap` | WiFi access point with Kconfig settings |
 | `mqtt_broker` | MQTT broker (Mongoose) with subscription table and wildcard matching |
 | `input_manager` | Button and encoder handling, delegates to `button.c` and `encoder.c` |
+| `display` | SSD1306 OLED display driver over I2C with text rendering (8x8 font) |
 | `mongoose` | Vendored Mongoose networking library v7.20 |
 
 ## Requirements
@@ -84,6 +86,14 @@ All settings are available via `idf.py menuconfig`:
 | `MQTT_BROKER_MAX_CLIENTS` | 8 | Max concurrent clients |
 | `MQTT_BROKER_MAX_SUBSCRIPTIONS` | 32 | Max total subscriptions |
 
+### Display
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `DISPLAY_PIN_SDA` | 22 | I2C SDA GPIO |
+| `DISPLAY_PIN_SCL` | 19 | I2C SCL GPIO |
+| `DISPLAY_PIN_RST` | -1 | Reset GPIO (-1 = not connected) |
+| `DISPLAY_I2C_FREQ_HZ` | 400000 | I2C clock frequency (Hz) |
+
 ### Input Manager
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -125,6 +135,20 @@ All inputs use internal pull-down resistors (active high). Buttons and encoder c
        │      │
        │ GND ─┼─────────────────── GND
        └──────┘
+```
+
+        ESP32                        OLED SSD1306 (I2C)
+       ┌──────┐                     ┌──────────┐
+       │      │                     │          │
+       │ 3V3 ─┼─────────────────────┤ VCC      │
+       │      │                     │          │
+       │ G22 ─┼─────────────────────┤ SDA      │
+       │      │                     │          │
+       │ G19 ─┼─────────────────────┤ SCL      │
+       │      │                     │          │
+       │ GND ─┼─────────────────────┤ GND      │
+       │      │                     │          │
+       └──────┘                     └──────────┘
 ```
 
 > If using a KY-040 module with on-board 10 kΩ pull-ups, remove them or cut the traces — they conflict with the pull-down configuration.
@@ -186,5 +210,6 @@ train-control/
     ├── wifi_ap/
     ├── mqtt_broker/
     ├── input_manager/
+    ├── display/
     └── mongoose/
 ```

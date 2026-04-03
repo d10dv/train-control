@@ -11,8 +11,41 @@
 #include "wifi_ap.h"
 #include "mqtt_broker.h"
 #include "input_manager.h"
+#include "display.h"
 
 static const char *TAG = "main";
+
+static int32_t s_encoder_pos = 0;
+
+static void update_display(void)
+{
+    char line[17]; /* 16 chars + NUL (128px / 8px font = 16 columns) */
+
+    /* Row 0: encoder position */
+    snprintf(line, sizeof(line), "Enc: %-10ld", (long)s_encoder_pos);
+    display_draw_text(0, 0, line);
+}
+
+static void encoder_display_handler(void *arg, esp_event_base_t event_base,
+                                    int32_t event_id, void *event_data)
+{
+    input_event_t *evt = (input_event_t *)event_data;
+
+    switch (event_id) {
+    case TRAIN_EVT_ENCODER_CW:
+        s_encoder_pos += evt->value;
+        break;
+    case TRAIN_EVT_ENCODER_CCW:
+        s_encoder_pos += evt->value;
+        break;
+    case TRAIN_EVT_ENCODER_CLICK:
+        s_encoder_pos = 0;
+        break;
+    default:
+        return;
+    }
+    update_display();
+}
 
 /* ─── Input → MQTT bridge ─── */
 
@@ -80,7 +113,10 @@ void app_main(void)
     /* 6. Start MQTT broker */
     mqtt_broker_init();
 
-    /* 7. Start input manager */
+    /* 7. Initialize display */
+    ESP_ERROR_CHECK(display_init());
+
+    /* 8. Start input manager */
     /* TODO: define actual input descriptors for your hardware */
     static const input_descriptor_t inputs[] = {
         { .id = 0, .type = INPUT_BUTTON,  .pin = { .button  = { .gpio = GPIO_NUM_12 } } },
@@ -89,13 +125,20 @@ void app_main(void)
     };
     input_manager_init(inputs, sizeof(inputs) / sizeof(inputs[0]));
 
-    /* 8. Register input → MQTT bridge */
+    /* 9. Register input → MQTT bridge */
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_BUTTON_PRESS, input_to_mqtt_handler, NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_BUTTON_LONG_PRESS, input_to_mqtt_handler, NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_BUTTON_RELEASE, input_to_mqtt_handler, NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_ENCODER_CW, input_to_mqtt_handler, NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_ENCODER_CCW, input_to_mqtt_handler, NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_ENCODER_CLICK, input_to_mqtt_handler, NULL);
+
+    /* 10. Register encoder → display */
+    esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_ENCODER_CW, encoder_display_handler, NULL);
+    esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_ENCODER_CCW, encoder_display_handler, NULL);
+    esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_ENCODER_CLICK, encoder_display_handler, NULL);
+
+    update_display();
 
     const esp_app_desc_t *app_desc = esp_app_get_description();
     ESP_LOGI(TAG, "Train Control v%s started (IDF %s)", app_desc->version, app_desc->idf_ver);
