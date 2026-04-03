@@ -55,17 +55,15 @@ static void encoder_init_pcnt(encoder_state_t *enc)
     ESP_ERROR_CHECK(pcnt_channel_set_level_action(chan_a,
         PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
 
-    /* Channel B: counts on B edges, direction from A level */
-    pcnt_chan_config_t chan_b_config = {
-        .edge_gpio_num = enc->gpio_b,
-        .level_gpio_num = enc->gpio_a,
+    /* Configure pull-up on encoder GPIOs (common pin is GND) */
+    gpio_set_pull_mode(enc->gpio_a, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(enc->gpio_b, GPIO_PULLUP_ONLY);
+
+    /* Glitch filter to suppress contact bounce */
+    pcnt_glitch_filter_config_t filter_config = {
+        .max_glitch_ns = 1000,
     };
-    pcnt_channel_handle_t chan_b;
-    ESP_ERROR_CHECK(pcnt_new_channel(enc->pcnt_unit, &chan_b_config, &chan_b));
-    ESP_ERROR_CHECK(pcnt_channel_set_edge_action(chan_b,
-        PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE));
-    ESP_ERROR_CHECK(pcnt_channel_set_level_action(chan_b,
-        PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
+    ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(enc->pcnt_unit, &filter_config));
 
     /* Enable and start */
     ESP_ERROR_CHECK(pcnt_unit_enable(enc->pcnt_unit));
@@ -84,6 +82,9 @@ static void encoder_poll_pcnt(encoder_state_t *enc)
     if (delta != 0) {
         enc->last_count = count;
 
+        DLOG_I(TAG, "Encoder %d: count=%d delta=%ld %s",
+               enc->id, count, (long)delta, (delta > 0) ? "CW" : "CCW");
+
         input_event_t evt = { .input_id = enc->id, .value = delta };
         train_event_id_t event_id = (delta > 0) ? TRAIN_EVT_ENCODER_CW : TRAIN_EVT_ENCODER_CCW;
         esp_event_post(TRAIN_EVENT, event_id, &evt, sizeof(evt), 0);
@@ -97,8 +98,8 @@ static void encoder_init_gpio(encoder_state_t *enc)
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << enc->gpio_a) | (1ULL << enc->gpio_b),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf);
@@ -121,6 +122,9 @@ static void encoder_poll_gpio(encoder_state_t *enc)
     int8_t delta = transition[(prev << 2) | state];
 
     if (delta != 0) {
+        DLOG_I(TAG, "Encoder %d: A=%d B=%d delta=%d %s",
+               enc->id, a, b, delta, (delta > 0) ? "CW" : "CCW");
+
         input_event_t evt = { .input_id = enc->id, .value = delta };
         train_event_id_t event_id = (delta > 0) ? TRAIN_EVT_ENCODER_CW : TRAIN_EVT_ENCODER_CCW;
         esp_event_post(TRAIN_EVENT, event_id, &evt, sizeof(evt), 0);

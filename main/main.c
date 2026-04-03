@@ -83,9 +83,9 @@ void app_main(void)
     /* 7. Start input manager */
     /* TODO: define actual input descriptors for your hardware */
     static const input_descriptor_t inputs[] = {
-        { .id = 0, .type = INPUT_BUTTON, .pin = { .button = { .gpio = GPIO_NUM_12 } } },
-        { .id = 1, .type = INPUT_BUTTON, .pin = { .button = { .gpio = GPIO_NUM_14 } } },
-        { .id = 2, .type = INPUT_ENCODER, .pin = { .encoder = { .gpio_a = GPIO_NUM_25, .gpio_b = GPIO_NUM_26, .gpio_btn = GPIO_NUM_27 } } },
+        { .id = 0, .type = INPUT_BUTTON,  .pin = { .button  = { .gpio = GPIO_NUM_12 } } },
+        { .id = 1, .type = INPUT_BUTTON,  .pin = { .button  = { .gpio = GPIO_NUM_14 } } },
+        { .id = 2, .type = INPUT_ENCODER, .pin = { .encoder = { .gpio_a = GPIO_NUM_16, .gpio_b = GPIO_NUM_17, .gpio_btn = GPIO_NUM_21 } } },
     };
     input_manager_init(inputs, sizeof(inputs) / sizeof(inputs[0]));
 

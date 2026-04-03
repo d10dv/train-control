@@ -21,6 +21,7 @@ typedef enum {
  */
 typedef struct {
     gpio_num_t gpio;
+    bool active_low;  /**< true = pull-up + active low, false = pull-down + active high */
 } button_pin_t;
 
 /**

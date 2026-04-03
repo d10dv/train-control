@@ -13,6 +13,7 @@ static const char *TAG = "button";
 typedef struct {
     uint8_t id;
     gpio_num_t gpio;
+    bool active_low;
     TimerHandle_t debounce_timer;
     TimerHandle_t long_press_timer;
     bool pressed;
@@ -46,10 +47,11 @@ static void debounce_timer_cb(TimerHandle_t timer)
 {
     button_state_t *btn = (button_state_t *)pvTimerGetTimerID(timer);
     int level = gpio_get_level(btn->gpio);
-    bool is_pressed = (level == 0); /* Active low */
+    bool is_pressed = btn->active_low ? (level == 0) : (level == 1);
 
     if (is_pressed && !btn->pressed) {
         btn->pressed = true;
+        DLOG_I(TAG, "Button %d pressed (GPIO %d)", btn->id, btn->gpio);
 
         input_event_t evt = { .input_id = btn->id, .value = 1 };
         esp_event_post(TRAIN_EVENT, TRAIN_EVT_BUTTON_PRESS,
@@ -60,6 +62,7 @@ static void debounce_timer_cb(TimerHandle_t timer)
 
     } else if (!is_pressed && btn->pressed) {
         btn->pressed = false;
+        DLOG_I(TAG, "Button %d released (GPIO %d)", btn->id, btn->gpio);
 
         /* Stop long-press timer */
         xTimerStop(btn->long_press_timer, 0);
@@ -74,7 +77,7 @@ static void long_press_timer_cb(TimerHandle_t timer)
 {
     button_state_t *btn = (button_state_t *)pvTimerGetTimerID(timer);
     if (btn->pressed) {
-        DLOG_D(TAG, "Long press on button %d", btn->id);
+        DLOG_I(TAG, "Long press on button %d", btn->id);
 
         input_event_t evt = { .input_id = btn->id, .value = 1 };
         esp_event_post(TRAIN_EVENT, TRAIN_EVT_BUTTON_LONG_PRESS,
@@ -92,14 +95,15 @@ void button_init(const input_descriptor_t *desc)
     button_state_t *btn = &s_buttons[s_button_count];
     btn->id = desc->id;
     btn->gpio = desc->pin.button.gpio;
+    btn->active_low = desc->pin.button.active_low;
     btn->pressed = false;
 
-    /* Configure GPIO as input with pull-up */
+    /* Configure GPIO as input with pull-up or pull-down */
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << btn->gpio),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = btn->active_low ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_down_en = btn->active_low ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
         .intr_type = GPIO_INTR_ANYEDGE,
     };
     gpio_config(&io_conf);

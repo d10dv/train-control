@@ -91,6 +91,44 @@ All settings are available via `idf.py menuconfig`:
 | `INPUT_LONG_PRESS_MS` | 1000 | Long press threshold (ms) |
 | `INPUT_ENCODER_USE_PCNT` | y | Use hardware PCNT peripheral |
 
+## Wiring
+
+All inputs use internal pull-down resistors (active high). Buttons and encoder contacts close to 3.3 V when activated.
+
+```
+        ESP32                        Rotary Encoder (KY-040)
+       ┌──────┐                     ┌──────────┐
+       │      │                     │          │
+       │ 3V3 ─┼─────────────────────┤ VCC (+)  │
+       │      │                     │          │
+       │ G16 ─┼─────────────────────┤ CLK (A)  │
+       │      │                     │          │
+       │ G17 ─┼─────────────────────┤ DT  (B)  │
+       │      │                     │          │
+       │ G21 ─┼─────────────────────┤ SW       │
+       │      │                     │          │
+       │ GND ─┼─────────────────────┤ GND (-)  │
+       │      │                     │          │
+       └──────┘                     └──────────┘
+
+        ESP32                        Buttons
+       ┌──────┐                     ┌─────┐
+       │      │                     │     │
+       │ 3V3 ─┼──────────┬─────────┤ COM │
+       │      │          │         └─────┘
+       │      │        ┌─┴─┐
+       │ G12 ─┼────────┤ 0 │  Button 0 (stop / e-stop)
+       │      │        └───┘
+       │      │        ┌───┐
+       │ G14 ─┼────────┤ 1 │  Button 1 (horn / lights)
+       │      │        └───┘
+       │      │
+       │ GND ─┼─────────────────── GND
+       └──────┘
+```
+
+> If using a KY-040 module with on-board 10 kΩ pull-ups, remove them or cut the traces — they conflict with the pull-down configuration.
+
 ## Input Configuration
 
 Button and encoder pin assignments are defined in `main/main.c`:
@@ -100,7 +138,7 @@ static const input_descriptor_t inputs[] = {
     { .id = 0, .type = INPUT_BUTTON,  .pin = { .button  = { .gpio = GPIO_NUM_12 } } },
     { .id = 1, .type = INPUT_BUTTON,  .pin = { .button  = { .gpio = GPIO_NUM_14 } } },
     { .id = 2, .type = INPUT_ENCODER, .pin = { .encoder = {
-        .gpio_a = GPIO_NUM_25, .gpio_b = GPIO_NUM_26, .gpio_btn = GPIO_NUM_27
+        .gpio_a = GPIO_NUM_16, .gpio_b = GPIO_NUM_17, .gpio_btn = GPIO_NUM_21
     } } },
 };
 input_manager_init(inputs, sizeof(inputs) / sizeof(inputs[0]));
