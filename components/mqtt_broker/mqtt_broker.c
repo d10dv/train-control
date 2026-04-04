@@ -20,6 +20,12 @@ typedef struct subscription {
 
 typedef struct client {
     struct mg_connection *conn;
+    uint16_t keepalive_s;       /* Keepalive interval from CONNECT (seconds) */
+    int64_t  last_activity_ms;  /* Timestamp of last received data */
+    /* Last Will and Testament */
+    char    *will_topic;
+    char    *will_message;
+    size_t   will_message_len;
     struct client *next;
 } client_t;
 
@@ -36,11 +42,25 @@ static void addr_to_str(struct mg_connection *c, char *buf, size_t len)
     mg_snprintf(buf, len, "%M", mg_print_ip_port, &c->rem);
 }
 
+/* Read a 2-byte length-prefixed string from buf at offset pos.
+ * Returns number of bytes consumed (2 + string length), or 0 on error. */
+static size_t read_mqtt_string(const uint8_t *buf, size_t total, size_t pos,
+                               const char **out, size_t *out_len)
+{
+    if (pos + 2 > total) return 0;
+    uint16_t slen = (uint16_t)(buf[pos] << 8) | buf[pos + 1];
+    if (pos + 2 + slen > total) return 0;
+    *out = (const char *)&buf[pos + 2];
+    *out_len = slen;
+    return 2 + slen;
+}
+
 static void add_client(struct mg_connection *c)
 {
     client_t *cl = calloc(1, sizeof(*cl));
     if (cl) {
         cl->conn = c;
+        cl->last_activity_ms = mg_millis();
         cl->next = s_clients;
         s_clients = cl;
         s_client_count++;
@@ -69,6 +89,8 @@ static void remove_client(struct mg_connection *c)
         if ((*cp)->conn == c) {
             client_t *tmp = *cp;
             *cp = tmp->next;
+            free(tmp->will_topic);
+            free(tmp->will_message);
             free(tmp);
             s_client_count--;
             return;
@@ -125,6 +147,97 @@ static bool topic_matches(struct mg_str filter, struct mg_str topic)
     return (f == fe && t == te);
 }
 
+static client_t *find_client(struct mg_connection *c)
+{
+    for (client_t *cl = s_clients; cl; cl = cl->next) {
+        if (cl->conn == c) return cl;
+    }
+    return NULL;
+}
+
+/**
+ * Parse CONNECT packet variable header and payload to extract
+ * keepalive interval and Last Will (topic + message).
+ *
+ * MQTT 3.1.1 CONNECT layout after fixed header:
+ *   [2+N] Protocol Name ("MQTT")
+ *   [1]   Protocol Level (4)
+ *   [1]   Connect Flags
+ *   [2]   Keep Alive (seconds)
+ *   --- payload ---
+ *   [2+N] Client Identifier
+ *   [2+N] Will Topic     (if Will Flag set)
+ *   [2+N] Will Message   (if Will Flag set)
+ *   [2+N] Username       (if Username Flag set)
+ *   [2+N] Password       (if Password Flag set)
+ */
+static void parse_connect_packet(client_t *cl, const struct mg_mqtt_message *mm)
+{
+    const uint8_t *p = (const uint8_t *)mm->dgram.buf;
+    size_t total = mm->dgram.len;
+
+    /* Skip fixed header: 1 byte cmd + variable length encoding */
+    size_t hdr = 1;
+    while (hdr < total && (p[hdr] & 0x80)) hdr++;
+    hdr++;  /* skip last length byte */
+
+    size_t pos = hdr;
+
+    /* Protocol Name (skip) */
+    const char *str; size_t slen;
+    size_t consumed = read_mqtt_string(p, total, pos, &str, &slen);
+    if (!consumed) return;
+    pos += consumed;
+
+    /* Protocol Level (1 byte) */
+    if (pos >= total) return;
+    pos++;
+
+    /* Connect Flags (1 byte) */
+    if (pos >= total) return;
+    uint8_t flags = p[pos++];
+    bool will_flag   = (flags >> 2) & 0x01;
+
+    /* Keep Alive (2 bytes) */
+    if (pos + 2 > total) return;
+    cl->keepalive_s = (uint16_t)(p[pos] << 8) | p[pos + 1];
+    pos += 2;
+
+    /* Client Identifier (skip) */
+    consumed = read_mqtt_string(p, total, pos, &str, &slen);
+    if (!consumed) return;
+    pos += consumed;
+
+    /* Will Topic + Will Message */
+    if (will_flag) {
+        const char *wt; size_t wt_len;
+        consumed = read_mqtt_string(p, total, pos, &wt, &wt_len);
+        if (!consumed) return;
+        pos += consumed;
+
+        const char *wm; size_t wm_len;
+        consumed = read_mqtt_string(p, total, pos, &wm, &wm_len);
+        if (!consumed) return;
+        pos += consumed;
+
+        cl->will_topic = malloc(wt_len + 1);
+        if (cl->will_topic) {
+            memcpy(cl->will_topic, wt, wt_len);
+            cl->will_topic[wt_len] = '\0';
+        }
+        cl->will_message = malloc(wm_len);
+        if (cl->will_message) {
+            memcpy(cl->will_message, wm, wm_len);
+            cl->will_message_len = wm_len;
+        }
+
+        DLOG_I(TAG, "Client LWT: topic='%s' (%d bytes payload)",
+               cl->will_topic ? cl->will_topic : "?", (int)wm_len);
+    }
+
+    DLOG_I(TAG, "Client keepalive: %d s", cl->keepalive_s);
+}
+
 static void publish_to_subscribers(struct mg_str topic, struct mg_str payload)
 {
     for (subscription_t *sub = s_subs; sub; sub = sub->next) {
@@ -146,9 +259,17 @@ static void mqtt_ev_handler(struct mg_connection *c, int ev, void *ev_data)
     if (ev == MG_EV_MQTT_CMD) {
         struct mg_mqtt_message *mm = (struct mg_mqtt_message *)ev_data;
 
+        /* Update last activity timestamp for keepalive tracking */
+        client_t *cl_activity = find_client(c);
+        if (cl_activity) cl_activity->last_activity_ms = mg_millis();
+
         switch (mm->cmd) {
         case MQTT_CMD_CONNECT: {
             add_client(c);
+
+            /* Parse keepalive & LWT from CONNECT packet */
+            client_t *cl = find_client(c);
+            if (cl) parse_connect_packet(cl, mm);
 
             char addr[48];
             addr_to_str(c, addr, sizeof(addr));
@@ -305,6 +426,16 @@ static void mqtt_ev_handler(struct mg_connection *c, int ev, void *ev_data)
         case MQTT_CMD_DISCONNECT: {
             char addr[48];
             addr_to_str(c, addr, sizeof(addr));
+
+            /* Per MQTT spec: graceful disconnect — discard LWT */
+            client_t *cl_disc = find_client(c);
+            if (cl_disc) {
+                free(cl_disc->will_topic);
+                cl_disc->will_topic = NULL;
+                free(cl_disc->will_message);
+                cl_disc->will_message = NULL;
+            }
+
             remove_client(c);
             DLOG_I(TAG, "Client DISCONNECT from %s (clients: %d, subs: %d)",
                    addr, s_client_count, s_sub_count);
@@ -320,15 +451,30 @@ static void mqtt_ev_handler(struct mg_connection *c, int ev, void *ev_data)
 
     } else if (ev == MG_EV_CLOSE) {
         /* Check if this was a known client (unexpected disconnect) */
-        client_t *cl = s_clients;
-        bool was_client = false;
-        while (cl) {
-            if (cl->conn == c) { was_client = true; break; }
-            cl = cl->next;
-        }
-        if (was_client) {
+        client_t *cl = find_client(c);
+        if (cl) {
             char addr[48];
             addr_to_str(c, addr, sizeof(addr));
+
+            /* Publish Last Will and Testament if set */
+            if (cl->will_topic && cl->will_message) {
+                DLOG_W(TAG, "Publishing LWT for %s on '%s'",
+                       addr, cl->will_topic);
+                struct mg_str t = mg_str(cl->will_topic);
+                struct mg_str p = mg_str_n(cl->will_message, cl->will_message_len);
+                publish_to_subscribers(t, p);
+
+                /* Post LWT as internal event too */
+                if (strlen(cl->will_topic) < 128 && cl->will_message_len < 256) {
+                    mqtt_message_event_t evt = {0};
+                    memcpy(evt.topic, cl->will_topic, strlen(cl->will_topic));
+                    memcpy(evt.payload, cl->will_message, cl->will_message_len);
+                    evt.payload_len = cl->will_message_len;
+                    esp_event_post(TRAIN_EVENT, TRAIN_EVT_MQTT_MESSAGE,
+                                   &evt, sizeof(evt), 0);
+                }
+            }
+
             remove_client(c);
             DLOG_W(TAG, "Client lost connection from %s (clients: %d, subs: %d)",
                    addr, s_client_count, s_sub_count);
@@ -339,6 +485,31 @@ static void mqtt_ev_handler(struct mg_connection *c, int ev, void *ev_data)
 }
 
 /* ─── FreeRTOS task ─── */
+
+/**
+ * Check all connected clients for keepalive timeout.
+ * Per MQTT spec, broker should disconnect if no message received
+ * within 1.5x the keepalive interval.
+ */
+static void check_keepalive_timeouts(void)
+{
+    int64_t now = mg_millis();
+    client_t *cl = s_clients;
+    while (cl) {
+        client_t *next = cl->next;  /* save next — close may remove cl */
+        if (cl->keepalive_s > 0) {
+            int64_t timeout_ms = (int64_t)cl->keepalive_s * 1500;  /* 1.5x */
+            if (now - cl->last_activity_ms > timeout_ms) {
+                char addr[48];
+                addr_to_str(cl->conn, addr, sizeof(addr));
+                DLOG_W(TAG, "Keepalive timeout for %s (no data for %lld ms)",
+                       addr, (long long)(now - cl->last_activity_ms));
+                cl->conn->is_draining = 1;  /* trigger MG_EV_CLOSE */
+            }
+        }
+        cl = next;
+    }
+}
 
 static void mqtt_broker_task(void *arg)
 {
@@ -352,6 +523,7 @@ static void mqtt_broker_task(void *arg)
 
     for (;;) {
         mg_mgr_poll(&s_mgr, 100);
+        check_keepalive_timeouts();
     }
 }
 
