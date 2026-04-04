@@ -107,3 +107,50 @@ esp_err_t display_draw_text(int col, int row, const char *text)
     }
     return ESP_OK;
 }
+
+esp_err_t display_draw_text_2x(int col, int row, const char *text)
+{
+    const int row_pitch = FONT_H * 2 + 8; /* 16px glyph + 8px gap */
+    int x = col * FONT_W * 2;
+    int y = row * row_pitch;
+
+    for (const char *p = text; *p && x < DISPLAY_H_RES; p++, x += FONT_W * 2) {
+        char ch = *p;
+        if (ch < 0x20 || ch > 0x7E) ch = '?';
+
+        const uint8_t *glyph = font8x8[ch - 0x20];
+
+        /* Scale 8x8 glyph to 16x16: each pixel becomes a 2x2 block.
+         * SSD1306 page format: 16 bytes for top 8 rows, 16 for bottom 8. */
+        uint8_t buf[32];
+
+        for (int c = 0; c < 8; c++) {
+            uint8_t orig = glyph[c];
+
+            /* Stretch lower 4 bits → top page byte (8 bits) */
+            uint8_t top = 0;
+            for (int b = 0; b < 4; b++) {
+                if (orig & (1 << b))
+                    top |= (3 << (b * 2));
+            }
+
+            /* Stretch upper 4 bits → bottom page byte (8 bits) */
+            uint8_t bot = 0;
+            for (int b = 0; b < 4; b++) {
+                if (orig & (1 << (b + 4)))
+                    bot |= (3 << (b * 2));
+            }
+
+            /* Duplicate each column horizontally */
+            buf[c * 2]         = top;
+            buf[c * 2 + 1]     = top;
+            buf[16 + c * 2]     = bot;
+            buf[16 + c * 2 + 1] = bot;
+        }
+
+        esp_err_t err = esp_lcd_panel_draw_bitmap(
+            s_panel, x, y, x + FONT_W * 2, y + FONT_H * 2, buf);
+        if (err != ESP_OK) return err;
+    }
+    return ESP_OK;
+}

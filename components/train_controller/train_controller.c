@@ -118,26 +118,26 @@ static void publish_light(const train_t *t, bool on)
 
 static void update_display(void)
 {
-    char line[17]; /* 16 chars + NUL */
+    char line[9]; /* 8 chars + NUL (2x font: 8 columns on 128px) */
 
     if (s_active_idx < 0 || s_train_count == 0) {
-        display_draw_text(0, 0, "No trains       ");
-        display_draw_text(0, 1, "                ");
+        display_draw_text_2x(0, 0, "No train");
+        display_draw_text_2x(0, 1, "        ");
         return;
     }
 
     train_t *t = &s_trains[s_active_idx];
 
-    /* Row 0: train id */
-    snprintf(line, sizeof(line), "%-16.16s", t->id);
-    display_draw_text(0, 0, line);
+    /* Row 0: train id (truncated to 8 chars) */
+    snprintf(line, sizeof(line), "%-8.8s", t->id);
+    display_draw_text_2x(0, 0, line);
 
     /* Row 1: speed + direction + index */
     const char *dir = t->speed > 0 ? "F" : (t->speed < 0 ? "R" : "-");
-    snprintf(line, sizeof(line), "%4d%s %d/%d",
+    snprintf(line, sizeof(line), "%3d%s %d/%d",
              abs(t->speed), dir,
              s_active_idx + 1, s_train_count);
-    display_draw_text(0, 1, line);
+    display_draw_text_2x(0, 1, line);
 }
 
 #pragma GCC diagnostic pop

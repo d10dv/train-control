@@ -38,6 +38,14 @@ esp_err_t display_draw_bitmap(const uint8_t *bitmap);
  */
 esp_err_t display_draw_text(int col, int row, const char *text);
 
+/**
+ * Draw a text string at 2x scale (16x16 per character).
+ * @param col  character column (0–7  for 128px / 16px font)
+ * @param row  character row   (0–3  for 64px  / 16px font)
+ * @param text null-terminated string
+ */
+esp_err_t display_draw_text_2x(int col, int row, const char *text);
+
 #ifdef __cplusplus
 }
 #endif
