@@ -38,8 +38,12 @@ void app_main(void)
     /* 6. Start MQTT broker */
     mqtt_broker_init();
 
-    /* 7. Initialize display */
-    ESP_ERROR_CHECK(display_init());
+    /* 7. Initialize display (optional — board works without it) */
+    esp_err_t display_err = display_init();
+    if (display_err != ESP_OK) {
+        ESP_LOGW(TAG, "Display not available (%s), continuing without it",
+                 esp_err_to_name(display_err));
+    }
 
     /* 8. Start input manager */
     /* TODO: define actual input descriptors for your hardware */

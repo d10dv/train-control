@@ -107,6 +107,8 @@ esp_lcd_panel_handle_t display_get_panel(void)
 
 esp_err_t display_clear(void)
 {
+    if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+
     uint8_t buf[DISPLAY_H_RES * DISPLAY_V_RES / 8];
     memset(buf, 0, sizeof(buf));
     
@@ -120,6 +122,8 @@ esp_err_t display_clear(void)
 
 esp_err_t display_draw_bitmap(const uint8_t *bitmap)
 {
+    if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+
     esp_err_t ret = ESP_FAIL;
     if (xSemaphoreTake(s_display_mux, pdMS_TO_TICKS(100)) == pdTRUE) {
         ret = esp_lcd_panel_draw_bitmap(s_panel, 0, 0, DISPLAY_H_RES, DISPLAY_V_RES, bitmap);
@@ -130,6 +134,8 @@ esp_err_t display_draw_bitmap(const uint8_t *bitmap)
 
 esp_err_t display_draw_text(int col, int row, const char *text)
 {
+    if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+
     int x = col * FONT_W;
     int y = row * FONT_H;
 
@@ -158,6 +164,8 @@ esp_err_t display_draw_text(int col, int row, const char *text)
 
 esp_err_t display_draw_text_2x(int col, int row, const char *text)
 {
+    if (s_panel == NULL) return ESP_ERR_INVALID_STATE;
+
     const int row_pitch = FONT_H * 2 + 8; /* 16px glyph + 8px gap */
     int x = col * FONT_W * 2;
     int y = row * row_pitch;

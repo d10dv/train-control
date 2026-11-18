@@ -75,6 +75,12 @@ void wifi_ap_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    /* Cap TX power at 10 dBm (40 = 10 dBm in 0.25 dBm units).
+     * Must be called after esp_wifi_start(). WiFi calibration/TX
+     * spikes at 20 dBm can reach ~350 mA and trigger brownout
+     * resets on weak USB power. */
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(40));
+
     DLOG_I(TAG, "WiFi AP started. SSID: %s, Channel: %d",
            CONFIG_WIFI_AP_SSID, CONFIG_WIFI_AP_CHANNEL);
 }
