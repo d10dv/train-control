@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include "debug_log.h"
 #include "event_bus.h"
@@ -16,6 +17,11 @@ static const char *TAG = "train_ctrl";
 #define TRAIN_ID_MAXLEN 16
 #define SPEED_STEP      5
 #define SPEED_MAX       100
+
+/* Safety heartbeat: the train firmware force-stops if it receives no MQTT
+ * message for 10 s ("Safety stop: connection lost!"). Keep the period
+ * strictly below 10 s — 4 s leaves ample margin for network jitter. */
+#define HEARTBEAT_PERIOD_MS 4000
 
 typedef struct {
     char id[TRAIN_ID_MAXLEN];
@@ -109,6 +115,43 @@ static void publish_light(const train_t *t, bool on)
                      "{\"action\":\"light\",\"target\":\"all\",\"value\":%s}",
                      on ? "true" : "false");
     publish_cmd(t->id, buf, n);
+}
+
+/* ─── Safety heartbeat ───
+ * Periodically re-send the last speed command while a non-zero speed is
+ * set, so the train's 10 s watchdog never fires. Encoder changes still
+ * send immediately via handle_speed_change(); this timer just repeats the
+ * latest value. Stops automatically: after stop/estop t->speed == 0. */
+
+static void heartbeat_timer_cb(void *arg)
+{
+    (void)arg;
+    if (s_active_idx < 0)
+        return;
+
+    const train_t *t = &s_trains[s_active_idx];
+    if (t->speed != 0 && t->online)
+        publish_speed(t);
+}
+
+static void heartbeat_start(void)
+{
+    static esp_timer_handle_t s_hb_timer;
+    if (s_hb_timer)
+        return; /* already running */
+
+    const esp_timer_create_args_t args = {
+        .callback        = heartbeat_timer_cb,
+        .arg             = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name            = "train_hb",
+    };
+    if (esp_timer_create(&args, &s_hb_timer) == ESP_OK) {
+        esp_timer_start_periodic(s_hb_timer, HEARTBEAT_PERIOD_MS * 1000ULL);
+        ESP_LOGI(TAG, "heartbeat started (%d ms)", HEARTBEAT_PERIOD_MS);
+    } else {
+        ESP_LOGE(TAG, "failed to create heartbeat timer");
+    }
 }
 
 /* ─── Display ─── */
@@ -324,6 +367,8 @@ void train_controller_init(void)
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_BUTTON_PRESS,      on_button_event,  NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_BUTTON_LONG_PRESS, on_button_event,  NULL);
     esp_event_handler_register(TRAIN_EVENT, TRAIN_EVT_MQTT_MESSAGE,      on_mqtt_message,  NULL);
+
+    heartbeat_start();
 
     update_display();
     ESP_LOGI(TAG, "train controller initialized");
